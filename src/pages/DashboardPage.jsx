@@ -3,46 +3,41 @@ import { useNavigate } from 'react-router-dom';
 import { logout } from '../utils/auth';
 
 // Import icons from react-icons
-import { FiDollarSign, FiCreditCard, FiUser, FiLogOut } from 'react-icons/fi';
+import { FiDollarSign, FiCreditCard, FiUser, FiLogOut, FiSend, FiArrowDown } from 'react-icons/fi';
 import { useFetchUserDetails } from '../lib/models/auth/hooks';
 import PaymentComponent from '../components/PaymentComponent';
-import { useFetchUserBalance } from '../lib/models/wallet/hooks';
+import { useFetchUserBalance, useMutateTransferFunds, useMutateWithdraw } from '../lib/models/wallet/hooks';
+import TransferFundsModal from '../components/TransferFundsModal';
+import WithdrawModal from '../components/WithdrawaModal';
+import { toast } from 'react-toastify';
+
 
 function DashboardPage() {
   const navigate = useNavigate();
-  const [userr  , setUser] = useState(null);
-  const [balance, setBalance] = useState(0);
   const [fundAmount, setFundAmount] = useState('');
   const [transactions, setTransactions] = useState([]);
   const [activeTab, setActiveTab] = useState('transactions');
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const {isPending: isPendingTransfer, mutate: onMutateTransferFunds } = useMutateTransferFunds({});
+  const {isPending: isPendingWithdraw, mutate: onMutateWithdraw } = useMutateWithdraw({});
 
-  const {data: userdetails, isPending } = useFetchUserDetails();
-    const user = userdetails?.result
+  const { data: userdetails, isPending } = useFetchUserDetails();
+  const user = userdetails?.result;
 
-  const {data: userBalance, isPending: isPendingBalance, refetch: refetchUserBalance } = useFetchUserBalance();
-  const user_balance = userBalance?.balance;
+  const { data: userBalance, isPending: isPendingBalance, refetch: refetchUserBalance } = useFetchUserBalance();
+  const balance = userBalance?.balance || 0;
 
   useEffect(() => {
     refetchUserBalance();
-    if (user) {
-        setBalance(user_balance);
-      }
-
-  }, [user_balance]);
-
-
-    console.log("This is our user balance : ", userBalance?.balance)
-
+  }, [refetchUserBalance]);
 
   useEffect(() => {
-    // Check if user is logged in
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/login');
       return;
     }
-
-
   }, [navigate]);
 
   const handleLogout = () => {
@@ -50,11 +45,60 @@ function DashboardPage() {
     navigate('/login');
   };
 
-  const handleFundWallet = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleTransferFunds = async (recipient, amount) => {
+    try {
 
+    const payload = {
+        recipientEmail: recipient,
+        amount
+    }
+    onMutateTransferFunds(payload, {
+        onSuccess: () => {
+            toast.success("Transfer successfully");
+            // Refresh balance after transfer
+            refetchUserBalance();
+        },
+        onError: (error) => {
+            console.log(error)
+            toast.error(error.toString());
+        },
+    });
+      // Fetch updated transactions
+    //   fetchTransactions();
+    } catch (error) {
+      console.error('Transfer error:', error);
+      throw error;
+    }
   };
+
+  const handleWithdraw = async (amount, bankDetails) => {
+    try {
+
+        const payload = {
+            amount,
+            ...bankDetails
+        }
+        onMutateWithdraw(payload, {
+            onSuccess: () => {
+                toast.success("Withdraw successfully");
+                // Refresh balance after transfer
+                refetchUserBalance();
+            },
+            onError: (error) => {
+                console.log(error)
+                toast.error(error.toString());
+            },
+        });
+
+      // Fetch updated transactions
+    //   fetchTransactions();
+
+    } catch (error) {
+      console.error('Withdrawal error:', error);
+      throw error;
+    }
+  };
+
 
   if (!user) {
     return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
@@ -85,8 +129,24 @@ function DashboardPage() {
               <FiDollarSign className="h-4 w-4 text-gray-500" />
             </div>
             <div>
-              <div className="text-2xl font-bold">#{balance.toFixed(2)}</div>
+              <div className="text-2xl font-bold">₦{balance.toFixed(2)}</div>
               <p className="text-xs text-gray-500">Available for transactions</p>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => setShowTransferModal(true)}
+                className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+              >
+                <FiSend className="h-3 w-3" />
+                Transfer
+              </button>
+              <button
+                onClick={() => setShowWithdrawModal(true)}
+                className="flex items-center gap-1 rounded-md bg-gray-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700"
+              >
+                <FiArrowDown className="h-3 w-3" />
+                Withdraw
+              </button>
             </div>
           </div>
           <div className="rounded-lg border bg-white p-6 shadow-sm dark:bg-gray-800 dark:border-gray-700 md:col-span-2">
@@ -94,11 +154,11 @@ function DashboardPage() {
               <h3 className="text-lg font-bold">Fund Your Wallet</h3>
               <p className="text-sm text-gray-500">Add money to your wallet balance</p>
             </div>
-            <form onSubmit={handleFundWallet} className="mt-4 flex flex-col space-y-4 sm:flex-row sm:space-x-4 sm:space-y-0">
+            <form className="mt-4 flex flex-col space-y-4 sm:flex-row sm:space-x-4 sm:space-y-0">
               <div className="flex-1 space-y-2">
                 <label htmlFor="amount" className="text-sm font-medium">Amount</label>
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">$</span>
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">₦</span>
                   <input
                     id="amount"
                     placeholder="0.00"
@@ -113,11 +173,9 @@ function DashboardPage() {
                 </div>
               </div>
               <div className="flex items-end">
-
-                 <PaymentComponent amount={fundAmount} />
+                <PaymentComponent amount={fundAmount} />
               </div>
             </form>
-
           </div>
         </div>
 
@@ -161,16 +219,41 @@ function DashboardPage() {
                     {transactions.map((tx) => (
                       <div key={tx.id} className="flex items-center justify-between border-b pb-4">
                         <div className="flex items-center space-x-4">
-                          <div className={`rounded-full p-2 ${tx.type === 'deposit' ? 'bg-green-100' : 'bg-red-100'}`}>
-                            <FiCreditCard className={`h-4 w-4 ${tx.type === 'deposit' ? 'text-green-600' : 'text-red-600'}`} />
+                          <div className={`rounded-full p-2 ${
+                            tx.type === 'deposit'
+                              ? 'bg-green-100'
+                              : tx.type === 'withdrawal'
+                                ? 'bg-red-100'
+                                : 'bg-blue-100'
+                          }`}>
+                            <FiCreditCard className={`h-4 w-4 ${
+                              tx.type === 'deposit'
+                                ? 'text-green-600'
+                                : tx.type === 'withdrawal'
+                                  ? 'text-red-600'
+                                  : 'text-blue-600'
+                            }`} />
                           </div>
                           <div>
-                            <p className="font-medium">{tx.type === 'deposit' ? 'Deposit' : 'Withdrawal'}</p>
+                            <p className="font-medium">
+                              {tx.type === 'deposit'
+                                ? 'Deposit'
+                                : tx.type === 'withdrawal'
+                                  ? 'Withdrawal'
+                                  : 'Transfer'}
+                            </p>
                             <p className="text-sm text-gray-500">{new Date(tx.timestamp).toLocaleString()}</p>
+                            {tx.description && <p className="text-xs text-gray-500">{tx.description}</p>}
                           </div>
                         </div>
-                        <div className={`font-bold ${tx.type === 'deposit' ? 'text-green-600' : 'text-red-600'}`}>
-                          {tx.type === 'deposit' ? '+' : '-'}${tx.amount.toFixed(2)}
+                        <div className={`font-bold ${
+                          tx.type === 'deposit'
+                            ? 'text-green-600'
+                            : tx.type === 'withdrawal' || tx.type === 'transfer'
+                              ? 'text-red-600'
+                              : ''
+                        }`}>
+                          {tx.type === 'deposit' ? '+' : '-'}₦{tx.amount.toFixed(2)}
                         </div>
                       </div>
                     ))}
@@ -216,6 +299,22 @@ function DashboardPage() {
           )}
         </div>
       </main>
+
+      {/* Transfer Modal */}
+      <TransferFundsModal
+        isOpen={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+        onTransfer={handleTransferFunds}
+        balance={balance}
+      />
+
+      {/* Withdraw Modal */}
+      <WithdrawModal
+        isOpen={showWithdrawModal}
+        onClose={() => setShowWithdrawModal(false)}
+        onWithdraw={handleWithdraw}
+        balance={balance}
+      />
     </div>
   );
 }
